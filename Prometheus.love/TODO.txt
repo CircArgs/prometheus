@@ -1,0 +1,5 @@
+TODO file - just a general list of things that need to be done in an attempted order of priority:
+-HANDLE SPARSE MATRICES (same representation must work for OpenBlas, Basic, OpenCL implementations)
+-Cross Compile OpenBlas for Android
+-add opencl backend
+-add cuda backend

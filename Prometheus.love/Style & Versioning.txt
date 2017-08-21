@@ -1,0 +1,24 @@
+VERSIONING
+Version numbers will follow semantic versioning: http://semver.org/spec/v2.0.0.html
+
+STYLE
+Functions:
+1)Class Methods should be lowercase and use underscores to separate words (as will non-constant variables)
+ex. example_function
+
+The reason for this is that these functions are (visibly) implemented as table values.
+
+2)Otherwise, functions will be camel-cased ex. ExampleFunction
+
+Variables:
+1) All non-constant variables are lower case and if names are compound, component words are separated by underscores ex: example_variable
+
+2)All constant values are all CAPS with underscores ex. EXAMPLE_CONSTANT
+
+3)Booleans should be preceded by a word that implies its type ex's: is_, will_,...
+
+Arbitrary Comments on General Good Practice:
+Try to avoid creating local values in scope of a loop. Rather than reallocating memory for new values and potentially bogging down the garbage collector,
+just set the variable to nil outside the loop's scope and reassign it within scope.
+
+In this way, setting the garbage collector to be more aggressive doesn't make it keep having to free up space we are just going to reallocate

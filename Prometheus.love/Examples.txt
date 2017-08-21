@@ -1,0 +1,4 @@
+/*kernels and examples for spare matrix operations with OpenCL*/
+https://github.com/clMathLibraries/clSPARSE
+
+/*clBLAS... BLAS implemented with opencl*/
