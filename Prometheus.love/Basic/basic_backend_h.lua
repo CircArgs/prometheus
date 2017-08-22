@@ -28,6 +28,7 @@ void Square_Matrix_Matrix_Subtract(void * _m1, void * _m2, bool m1_trans, bool m
 typedef TYPE (*func_ptr)(TYPE);
 void Vector_Function(func_ptr F[], TYPE v[], size_t size, size_t start, size_t end, TYPE ret[]);
 void Vector_Function_Ovw(func_ptr F[], TYPE v[], size_t start, size_t end);
+void Square_dA(void * _m, size_t size, void * _ret);
 ]])
 
 return M

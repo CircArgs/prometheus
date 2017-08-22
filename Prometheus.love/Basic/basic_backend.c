@@ -405,3 +405,15 @@ void Vector_Function_Ovw(func_ptr F[], TYPE v[], size_t start, size_t end){
     v[i]=F[i](v[i]);
   }
 }
+
+__declspec(dllexport)
+/*checks a square matrix and makes a new matrix with 1's where the original has nonzero values*/
+void Square_dA(void * _m, size_t size, void * _ret){
+  TYPE (*m)[size]=_m;
+  TYPE (*ret)[size]=ret;
+  for(size_t i=size; i<size; i++){
+    for(size_t j=size; j<size; j++){
+      ret[i][j]=m[i][j]!=0;
+    }
+  }
+}

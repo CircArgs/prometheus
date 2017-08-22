@@ -21,16 +21,23 @@ function network.__Call(self, v, grad)
     alg.Function_Vector{F, v1, overwrite=true}
     return v
   else
+    local dA=self:dA()
     for i=1, self.nhidden do
       alg.Square_Matrix_Vector{A, ret, overwrite=true}
       alg.Function_Vector{F, v1, self.ninputs, self.ninputs+self.nhidden-1, overwrite=true}
     end
     alg.Function_Vector{F, v1, overwrite=true}
-    return {v, dualpart}
+    return {v, {dA, nrows=A.nrows, ncols=A.ncols, trans=false}}
   end
 end
 
-function alg.__index.Dualpart
+function alg.__index.dA(self)
+  local len=self[1].nrows
+  assert(len=self[1].ncols,"Matrix Dualpart Fetch Error: Matrix must be square.")
+  local dA=ffi.new('TYPE ['..len..']['..len..']')
+  alg.backend.Square_dA(self[1][1], len, dA)
+  return dA
+end
 
 function network.New_Network(t)
-  local 
+  local
