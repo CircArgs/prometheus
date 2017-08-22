@@ -422,8 +422,8 @@ end
 
 function alg.Vector_Function(t)
   --BIG NOTE: IF YOU USE A FUNCTION WITH LUA FUNCTIONS THEN YOU ARE TAKING ON SUBSTANTIAL OVERHEAD OF C TO LUA CALLBACKS
-  --call signature: alg.Vector_Function{F,v [, f_start(=), f_end(=), overwrite(=)]}
-  --F is array of functions, v is vector to apply functions to Elementwise, f_start is beginning of contiguous region in array to apply functions to, f_end ..., overwrite writes over the memory of the input vector.
+  --call signature: alg.Vector_Function{F,v [, f_start(=), f_end(=), overwrite(=), derivative(=)]}
+  --F is array of functions, v is vector to apply functions to Elementwise, f_start is beginning of contiguous region in array to apply functions to, f_end ..., overwrite writes over the memory of the input vector, derivative tells whether you want the to apply the first derivatives or not.
   local len=F.length
   assert(len==v.length, "Vector-Function Error: Length of vector of functions must match that of value vector.")
   local f_start=t.f_start or t[3] or 0
@@ -432,12 +432,13 @@ function alg.Vector_Function(t)
   local F=t.F or t[1]
   local v=t.v or t[2]
   local overwrite=t.overwrite or t[5]
+  local derivative=t.derivative or t[6] or false
   if overwrite then
-    alg.backend.Function_Vector_Ovw(F[1], v[1], len, f_start, f_end)
+    alg.backend.Function_Vector_Ovw(F[1], v[1], len, f_start, f_end, derivative)
     return v
   else
     local ret=backend._malloc(ffi.sizeof(TYPE)*len)
-    alg.backend.Function_Vector(F[1], v[1], len, f_start, f_end, ret)
+    alg.backend.Function_Vector(F[1], v[1], len, f_start, f_end, ret, derivative)
     return setmetatable({ffi.gc(ffi.cast('TYPE *', ret), backend._free), length=len, trans=false}, alg)
   end
 end

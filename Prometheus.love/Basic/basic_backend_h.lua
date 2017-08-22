@@ -10,6 +10,11 @@ local M=ffi.load(love.filesystem.getSourceBaseDirectory().."/Prometheus.love/Bas
 
 ffi.cdef(
 "typedef "..TYPE.." TYPE;"..[[
+typedef TYPE (*func_ptr)(TYPE);
+typedef struct {
+  func_ptr func;
+  func_ptr derivative;
+} function;
 void* _malloc(size_t size);
 void* _calloc(size_t num, size_t size);
 void* _realloc(void * ptr, size_t new_size);
@@ -25,10 +30,10 @@ void Square_Matrix_Matrix(void * _m1, void * _m2, bool m1_trans, bool m2_trans, 
 void Square_Matrix_Matrix_Elwise(void * _m1, void * _m2, bool m1_trans, bool m2_trans, size_t size, void * _ret);
 void Square_Matrix_Matrix_Add(void * _m1, void * _m2, bool m1_trans, bool m2_trans, size_t size, void * _ret);
 void Square_Matrix_Matrix_Subtract(void * _m1, void * _m2, bool m1_trans, bool m2_trans, size_t size, void * _ret);
-typedef TYPE (*func_ptr)(TYPE);
-void Vector_Function(func_ptr F[], TYPE v[], size_t size, size_t start, size_t end, TYPE ret[]);
-void Vector_Function_Ovw(func_ptr F[], TYPE v[], size_t start, size_t end);
+void Vector_Function(function F[], TYPE v[], size_t size, size_t start, size_t end, TYPE ret[], bool derivative);
+void Vector_Function_Ovw(function F[], TYPE v[], size_t start, size_t end, bool derivative);
 void Square_dA(void * _m, size_t size, void * _ret);
+void Sum_Dir(void * _m, size_t nrows, size_t ncols, bool dir, TYPE ret[]);
 ]])
 
 return M

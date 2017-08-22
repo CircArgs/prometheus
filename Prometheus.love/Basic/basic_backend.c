@@ -6,6 +6,7 @@ gcc - shared -o basic_backend.dll basic_backend.o
 /*DETAILS
 Fairly naive ('Basic') implementations for necessary operations involving vectors and matrices
 All non-transposed vectors are column vectors
+KEEP ALL FUNCTIONS INDEPENDENT OF ONE ANOTHER.
 /*
 TODO: SPARSE MATRICES.... make a new library sparse_basic_backend
 */
@@ -15,6 +16,10 @@ TODO: SPARSE MATRICES.... make a new library sparse_basic_backend
 
 typedef double TYPE; /*abstract away type name so can change to double precision easily*/
 typedef TYPE (*func_ptr)(TYPE);
+typedef struct {
+  func_ptr function;
+  func_ptr derivative;
+} function;
 
 __declspec(dllexport)
 void * _malloc(size_t size){
@@ -392,17 +397,18 @@ void Square_Matrix_Matrix_Subtract(void * _m1, void * _m2, bool m1_trans, bool m
 
 __declspec(dllexport)
 /*application of function vector over vector*/
-void Vector_Function(func_ptr F[], TYPE v[], size_t size,size_t start, size_t end, TYPE ret[]){
+void Vector_Function(function F, TYPE v[], size_t size,size_t start, size_t end, TYPE ret[], bool derivative){
+  func_ptr * F[2]=_F
   for(size_t i=0; i<size; i++){
-    ret[i]=F[i](v[i]);
+    ret[i]=F[i][derivative](v[i]);
   }
 }
 
 __declspec(dllexport)
 /*application of function vector over vector*/
-void Vector_Function_Ovw(func_ptr F[], TYPE v[], size_t start, size_t end){
+void Vector_Function_Ovw(function F, TYPE v[], size_t start, size_t end, bool derivative){
   for(size_t i=start; i<=end; i++){
-    v[i]=F[i](v[i]);
+    v[i]=F[i][derivative](v[i]);
   }
 }
 
@@ -414,6 +420,30 @@ void Square_dA(void * _m, size_t size, void * _ret){
   for(size_t i=size; i<size; i++){
     for(size_t j=size; j<size; j++){
       ret[i][j]=m[i][j]!=0;
+    }
+  }
+}
+
+__declspec(dllexport)
+/*sum over rows or columns of a matrix
+third argument (dir) is 0 for rows 1 for columns
+relies on host to consider transpose
+Main purpose: compute A^t * [1] where [1] is a vector of 1's whose length is A's number of columns so this denotes a sum over columns
+*/
+
+void Sum_Dir(void * _m, size_t nrows, size_t ncols, bool dir, TYPE ret[]){
+  TYPE (*m)[nrows]=_m;
+  if(!dir){
+    for(size_t j=0; j<nrows;j++){
+      for(size_t i=0; i<ncols;i++){
+        ret[j]+=m[i][j];
+      }
+    }
+  }else{
+    for(size_t i=0; i<nrows;i++){
+      for(size_t j=0; j<ncols;j++){
+        ret[j]+=m[i][j];
+      }
     }
   }
 }
