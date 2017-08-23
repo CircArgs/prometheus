@@ -19,6 +19,7 @@ void* _malloc(size_t size);
 void* _calloc(size_t num, size_t size);
 void* _realloc(void * ptr, size_t new_size);
 void _free(void * ptr);
+void * _memcpy(void *str1, const void *str2, size_t n);
 TYPE Vector_Sum(TYPE u[], size_t len);
 TYPE Vector_Vector(TYPE u[], TYPE v[], size_t u_len);
 void Vector_Vector_Add(TYPE u[], TYPE v[], bool u_trans, bool v_trans, size_t u_len, void* _ret);
@@ -31,7 +32,6 @@ void Square_Matrix_Matrix_Elwise(void * _m1, void * _m2, bool m1_trans, bool m2_
 void Square_Matrix_Matrix_Add(void * _m1, void * _m2, bool m1_trans, bool m2_trans, size_t size, void * _ret);
 void Square_Matrix_Matrix_Subtract(void * _m1, void * _m2, bool m1_trans, bool m2_trans, size_t size, void * _ret);
 void Vector_Function(function F[], TYPE v[], size_t size, size_t start, size_t end, TYPE ret[], bool derivative);
-void Vector_Function_Ovw(function F[], TYPE v[], size_t start, size_t end, bool derivative);
 void Square_dA(void * _m, size_t size, void * _ret);
 void Sum_Dir(void * _m, size_t nrows, size_t ncols, bool dir, TYPE ret[]);
 ]])

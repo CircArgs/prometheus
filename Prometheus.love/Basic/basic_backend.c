@@ -1,6 +1,6 @@
 /*assemble this to basic_backend.dll via:
 gcc -c basic_backend.c
-gcc - shared -o basic_backend.dll basic_backend.o
+gcc -shared -o basic_backend.dll basic_backend.o
 */
 
 /*DETAILS
@@ -10,14 +10,15 @@ KEEP ALL FUNCTIONS INDEPENDENT OF ONE ANOTHER.
 /*
 TODO: SPARSE MATRICES.... make a new library sparse_basic_backend
 */
-#include <stdlib.h>/*malloc*/
+#include <stdlib.h>/*malloc,calloc,realloc,free*/
 #include <stdbool.h>/*for booleans*/
 #include <stddef.h>/*for size_t, NULL*/
+#include <string.h>/*for memcpy*/
 
 typedef double TYPE; /*abstract away type name so can change to double precision easily*/
 typedef TYPE (*func_ptr)(TYPE);
 typedef struct {
-  func_ptr function;
+  func_ptr func;
   func_ptr derivative;
 } function;
 
@@ -39,6 +40,11 @@ void * _realloc( void *ptr, size_t new_size ){
 __declspec(dllexport)
 void _free(void * ptr){
   free(ptr);
+}
+
+__declspec(dllexport)
+void * _memcpy(void *str1, const void *str2, size_t n){
+  memcpy(str1, str2, n);
 }
 
 __declspec(dllexport)
@@ -143,13 +149,13 @@ void Square_Matrix_Vector(TYPE u[], void * _m2, bool m2_trans, size_t size, TYPE
   if(m2_trans){
     for (size_t i = 0; i < size; i++){
       for (size_t j = 0; j < size; j++){
-        ret[i] += u[i]*m2[j][i];
+        ret[i]+= u[j]*m2[j][i];
       }
     }
   }else{
     for (size_t i = 0; i < size; i++){
       for (size_t j = 0; j < size; j++){
-        ret[i] += u[i]*m2[i][j];
+        ret[i] += u[j]*m2[i][j];
       }
     }
   }
@@ -396,21 +402,24 @@ void Square_Matrix_Matrix_Subtract(void * _m1, void * _m2, bool m1_trans, bool m
 }
 
 __declspec(dllexport)
-/*application of function vector over vector*/
-void Vector_Function(function F, TYPE v[], size_t size,size_t start, size_t end, TYPE ret[], bool derivative){
-  func_ptr * F[2]=_F
-  for(size_t i=0; i<size; i++){
-    ret[i]=F[i][derivative](v[i]);
+/*application of function vector over vector
+derivative applies the derivative (should be second element of function type)
+start is where respective functions start getting applied i.e. if start=3 then F[3].func will be applied to v[3] (derivative=false)
+end is the last element it will be applied to
+*/
+void Vector_Function(function F[], TYPE v[], size_t size, size_t start, size_t end, TYPE ret[], bool derivative){
+  if(derivative){
+    for(size_t i=start; i<=end; i++){
+      ret[i]=F[i].derivative(v[i]);
+    }
+  }else{
+    for(size_t i=start; i<=end; i++){
+      ret[i]=F[i].func(v[i]);
+    }
   }
 }
 
-__declspec(dllexport)
-/*application of function vector over vector*/
-void Vector_Function_Ovw(function F, TYPE v[], size_t start, size_t end, bool derivative){
-  for(size_t i=start; i<=end; i++){
-    v[i]=F[i][derivative](v[i]);
-  }
-}
+
 
 __declspec(dllexport)
 /*checks a square matrix and makes a new matrix with 1's where the original has nonzero values*/

@@ -3,54 +3,61 @@ This script provides the linear algebra using a basic library coded directly in 
 There is not so much error checking as these are internal functions and, as effectively wrappers to C functions meant to increase performance, decrease performance enough as it is
 ]]
 
-local backend=require("Basic.basic_backend_h") -- note that the namespace is cached and not the individual library (LuaJIT FFI mostly eliminates overhead for calls to library functions but calls to cached functions naturally have overhead)
 local ffi=require "ffi"
 local init=require "init"
 local templet=require "templet"
+local TYPE=init.TYPE
 
 --return loadstring(templet.loadstring[[]])
 
-local alg={__index={}}
+local alg={backend=backend,__index={}}
+alg.backend=require("Basic.basic_backend_h") -- note that the namespace is cached and not the individual library (LuaJIT FFI mostly eliminates overhead for calls to library functions but calls to cached functions naturally have overhead)
+backend=alg.backend
 
 function alg.__index.Is_Vector(o)
   --call signature: o:Is_Vector() or alg.Is_Vector(o)
-  return o.length~=nil
+  return o.length~=nil and o.trans~=nil and getmetatable(o)==alg
 end
 
 function alg.__index.Is_Matrix(o)
   --call signature: o:Is_Matrix() or alg.Is_Matrix(o)
-  return o.nrows~=nil
+  return o.nrows~=nil and getmetatable(o)==alg
 end
 
 function alg.__index.Is_Function(o)
-  return o.trans==nil
+  return o.trans==nil and getmetatable(o)==alg
+end
+
+function alg.__index.dA(self)
+  local len=self.nrows
+  assert(self:Is_Matrix() and len==self.ncols, "Dualpart Matrix Error: object must be square matrix.")
+  local ret=ffi.new('TYPE['..len..']['..len..']')
+  backend.Square_dA(self[1],len,ret)
+  return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=self.trans}, alg)
 end
 
 function alg.__call(self, t)
   --call signature vector v: v{i} returns ith element (indexed from 0)
   --call signature matrix m: m{i,j} returns the element in the ith row and jth column  (indexed from 0)
   --call signature function F: F(v) returns F evaluated on v
-  local try,_=pcall(function (x) return math.fmod(t[1],x) end, 1)
+  local try1,_=pcall(function (x) return math.fmod(t[1],x) end, 1)
   if self:Is_Vector() then
-    assert(try and t[1]>=0 and t[1]<self.length, "Vector Index error: Must provide nonnegative integer index within length(indexing for matrices, vectors and functions begins at 0).")
+    assert(try1 and t[1]>=0 and t[1]<self.length, "Vector Index error: Must provide nonnegative integer index within length(indexing for matrices, vectors and functions begins at 0).")
     return self[1][t[1]]
   elseif self:Is_Matrix() then
-    local try,_=pcall(function (x) return math.fmod(t[2],x) end, 1)
-    assert(try and t[2]>=0 and t[1]>=0 and t[2]<self.ncols and t[1]<self.nrows, "Matrix Index error: Must provide nonnegative integer indices within range (indexing for matrices, vectors and functions begins at 0).")
+    local try2,_=pcall(function (x) return math.fmod(t[2],x) end, 1)
+    assert(try1 and try2 and t[2]>=0 and t[1]>=0 and t[2]<self.ncols and t[1]<self.nrows, "Matrix Index error: Must provide nonnegative integer indices within range (indexing for matrices, vectors and functions begins at 0).")
     return self[1][t[1]][t[2]]
   elseif self:Is_Function() then
-    return alg.Vector_Function(self,t)
+    return alg.Vector_Function{self,t}
   else
     error("Index Error: index out of bounds (indexing for matrices, vectors and functions begins at 0).")
   end
 end
 
-function alg.__mul(self, o)
-end
-
-function alg.__index.Values(o)--returns the values of a matrix or vector
+function alg.__index.Values(self)--returns the values of a matrix or vector
     --call signature: o:Values() or alg.Values(o)
-  return o[1]
+  return self[1]
 end
 
 function alg.Resolve_Pointer(pointer)--just sugar
@@ -87,7 +94,7 @@ function alg.Matrix_Iterator(m)
 end
 
 function alg.Vector_To_String(v)--CURRENTLY DOES NOT FACTOR IN TRANSPOSE
-  if not v.trans then
+  if v.trans then
     local ret="["
     local len=v.length
     local v=v[1]--locally cache v's values
@@ -115,22 +122,54 @@ function alg.Vector_To_Table(v)--DOESN'T CARE ABOUT TRANSPOSE
   end
   return ret
 end
-
-function alg.Matrix_To_String(m)--CURRENTLY DOES NOT FACTOR IN TRANSPOSE
-  local r, c=m.nrows, m.ncols;
-  local ret=''
-  local m=m[1]--locally cache m's values
-  for i=0, r-1 do
-    --ret=ret..'|'
-    for j=0, c-2 do
-      ret=ret..m[i][j]..','
-    end
-    ret=ret..m[i][c-1]..' \n '
-    --ret=ret..m[i][c-1]..'|\n'
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+--UTILITY FUNCTIONS FOR MATRIX PRINTING... VERY BRUTE FORCE AND LAZY... BUT THEY'RE JUST FOR PRINTING FOR DEBUGGING
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+local function Spaces(n)
+  local string=""
+  for i=1,n do
+    string=string.." "
+  end
+  return string
+end
+local function Num_Length(n)
+  local ret=#tostring(n)
+  if math.fmod(n,1)==0 then
+    ret=ret+.5
+  end
+  if n<0 then
+    ret=ret-.5
   end
   return ret
 end
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function alg.Matrix_To_String(mat)--DOESN'T CARE ABOUT TRANSPOSE
+  local strings={}
+  local nrows=mat.nrows
+  local ncolumns=mat.ncols
+  local max=0
+  for j=0,ncolumns-1 do
+    max=0
+    for i=0,nrows-1 do
+      strings[i+1]=strings[i+1] or ''
+      temp=#tostring(mat[1][i][j])
+      if max<temp then
+        max=temp
+      end
+    end
+    for i=0,nrows-1 do
+      strings[i+1]=strings[i+1]..mat[1][i][j]..Spaces(2*(max-Num_Length(mat[1][i][j])+2))
+    end
+  end
+  local ret=''
+  for i=1,nrows do
+    ret=ret..'\n '..strings[i]
+  end
+  return ret..'\n'
+end
 
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 function alg.Matrix_To_Table(m)--CURRENTLY DOES NOT FACTOR IN TRANSPOSE
   local r,c= m.nrows, m.ncols;
   local ret={}
@@ -206,14 +245,25 @@ end
 
 function alg.New_Function(t)
   --call signature: alg.New_Function{length(=), [,ptr]} or alg.New_Function{{fun1, fun2, fun3,...} [,length(=)]}
+  --must give a funtion as per alg.functions library
   if type(t[1])=='table' then
     local nfuns=t.length or t[2] or #t[1]
-    local ptr=ffi.new('func_ptr['..nfuns..']', t[1])
+    local ptr=ffi.new('function['..nfuns..']', t[1])
     return setmetatable({ptr, length=nfuns}, alg)
   else
     local nfuns=t.length or t[1]
-    local ptr=ffi.new('func_ptr[?]',nfuns)
+    local ptr=ffi.new('function[?]',nfuns)
     return setmetatable({ptr, length=nfuns}, alg)
+  end
+end
+
+function alg.__index.Shape(self)
+  if self:Is_Matrix() then
+    return self:Matrix_Shape()
+  elseif self:Is_Vector() or self:Is_Function() then
+    return self.length
+  else
+    error("Shape Error: Object shape undefined.")
   end
 end
 
@@ -247,21 +297,21 @@ function alg.Vector_Vector_Add(t)
   if(u_transposed) then
     if(v_transposed) then
       local ret=backend._malloc(ffi.sizeof(TYPE)*len)
-      alg.backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
+      backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=true}, alg)
     else
       local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-      alg.backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
+      backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
     end
   else
     if(v_transposed) then
       local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-      alg.backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
+      backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
     else
       local ret=backend._malloc(ffi.sizeof(TYPE)*len)
-      alg.backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
+      backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=false} ,alg)
     end
   end
@@ -276,7 +326,7 @@ function alg.Vector_Vector(t)
   local v=t.v2 or t[2]
   local len=u.length
   assert(len==v.length, "Vector Length Error: Vectors must have same lengths to add.")
-  return alg.backend.Vector_Vector(u,v,size)
+  return backend.Vector_Vector(u,v,size)
 end
 
 function alg.Vector_Vector_Elwise(t)--elementwise multiply two vectors. This utility function checks compatibility and handles garbage collection.
@@ -297,21 +347,21 @@ function alg.Vector_Vector_Elwise(t)--elementwise multiply two vectors. This uti
   if(u_transposed) then
     if(v_transposed) then
       local ret=backend._malloc(ffi.sizeof(TYPE)*len)
-      alg.backend.Vector_Vector_Elwise(u[1], v[1], u_transposed, v_transposed, len, ret)
+      backend.Vector_Vector_Elwise(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=true}, alg)
     else
       local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-      alg.backend.Vector_Vector_Elwise(u[1], v[1], u_transposed, v_transposed, len, ret)
+      backend.Vector_Vector_Elwise(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']',ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
     end
   else
     if(v_transposed) then
       local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-      alg.backend.Vector_Vector_Elwise(u[1], v[1], u_transposed, v_transposed, len, ret)
+      backend.Vector_Vector_Elwise(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']',ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
     else
       local ret=backend._malloc(ffi.sizeof(TYPE)*len)
-      alg.backend.Vector_Vector_Elwise(u[1], v[1], u_transposed, v_transposed, len, ret)
+      backend.Vector_Vector_Elwise(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=false} ,alg)
     end
   end
@@ -319,49 +369,53 @@ end
 
 function alg.Square_Matrix_Vector(t)
   --NOTE: Does not consider whether the vector is transposed or not
-  --call signature: alg.Square_Matrix_Vector{m(=), v(=) [,m_trans(=), overwrite(=)]}
+  --call signature: alg.Square_Matrix_Vector{m(=), v(=) [,m_trans(=)]}
   local m=t.m or t[1]
   local v=t.v or t[2]
   local len=v.length
   local trans=t.m_trans or t[3] or m.trans
   assert(len==m.nrows and len==m.ncols, "Square Matrix - Vector Multiplication Error: Matrix must be square and have number of columns equal to the length of the vector.")
-  local overwrite=t.overwrite or t[4]
-  if not overwrite then
-    local ret=backend._malloc(ffi.sizeof(TYPE)*len)
-    alg.backend.Square_Matrix_Vector(v[1],m[1],trans,len,ret)
-    return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=false}, alg)
-  else
-    alg.backend.Square_Matrix_Vector(v[1],m[1],trans,len,v[1])
-    return v
-  end
+  local ret=backend._calloc(len,ffi.sizeof(TYPE))
+  backend.Square_Matrix_Vector(v[1],m[1],trans,len,ret)
+  return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=false}, alg)
 end
 
 function alg.Vector_Square_Matrix_Elwise(t)
   --Is commutative (vector and matrix must still be in the proper arguments)
-  --call signature: alg.Vector_Square_Matrix_Elwise{v(=), m(=) [,v_trans(=), m_trans(=)]}
+  --call signature: alg.Vector_Square_Matrix_Elwise{v(=), m(=) [,v_trans(=), m_trans(=), overwrite(=)]}
   local m=t.m or t[2]
   local v=t.v or t[1]
   local v_transposed=t.v_trans or t[3] or v.trans
   local len=v.length
   local m_transposed=t.m_trans or t[4] or m.trans
   assert(len==m.nrows and len==m.ncols, "Vector-Square Matrix Elementwise Multiplication Error: Matrix must be square and have number of columns equal to the length of the vector.")
-  local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-  alg.backend.Vector_Square_Matrix_Elwise(v[1], m[1], u_transposed, v_transposed, len, ret)
-  return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']',ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
+  if t.overwrite or t[5] then
+    backend.Vector_Square_Matrix_Elwise(v[1], m[1], v_transposed, m_transposed, len, m[1])
+    return m
+  else
+    local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
+    backend.Vector_Square_Matrix_Elwise(v[1], m[1], v_transposed, m_transposed, len, ret)
+    return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']',ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
+  end
 end
 
 function alg.Vector_Square_Matrix_Add(t)
   --Is commutative (vector and matrix must still be in the proper arguments)
-  --call signature: alg.Vector_Square_Matrix_Elwise{v(=), m(=) [,v_trans(=), m_trans(=)]}
+  --call signature: alg.Vector_Square_Matrix_Elwise{v(=), m(=) [,v_trans(=), m_trans(=), overwrite(=)]}
   local m=t.m or t[2]
   local v=t.v or t[1]
   local v_transposed=t.v_trans or t[3] or v.trans
   local len=v.length
   local m_transposed=t.m_trans or t[4] or m.trans
   assert(len==m.nrows and len==m.ncols, "Vector-Square Matrix Elementwise Addition Error: Matrix must be square and have number of columns equal to the length of the vector.")
-  local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-  alg.backend.Vector_Square_Matrix_Add(v[1], m[1], u_transposed, v_transposed, len, ret)
-  return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']',ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
+  if t.overwrite or t[5] then
+    backend.Vector_Square_Matrix_Add(v[1], m[1], v_transposed, m_transposed, len, m[1])
+    return m
+  else
+    local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
+    backend.Vector_Square_Matrix_Add(v[1], m[1], v_transposed, m_transposed, len, ret)
+    return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']',ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
+  end
 end
 
 function alg.Square_Matrix_Matrix(t)
@@ -374,22 +428,28 @@ function alg.Square_Matrix_Matrix(t)
   local m2_transposed=t.m2_trans or t[4] or m2.trans
   assert(len==m1.nrows and len==m2.ncols and m2.nrows==len, "Square Matrix-Matrix Multiplication Error: Matrices must be square and have same shape.")
   local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-  alg.backend.Square_Matrix_Matrix(m1[1], m2[1], m1_transposed, m2_transposed, len, ret)
+  backend.Square_Matrix_Matrix(m1[1], m2[1], m1_transposed, m2_transposed, len, ret)
   return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']',ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
 end
 
 function alg.Square_Matrix_Matrix_Elwise(t)
   --Is commutative (vector and matrix must still be in the proper arguments)
-  --call signature: alg.Vector_Square_Matrix_Elwise{m1(=), m2(=) [,m1_trans(=), m2_trans(=)]}
+  --call signature: alg.Vector_Square_Matrix_Elwise{m1(=), m2(=) [,m1_trans(=), m2_trans(=), overwrite(=)]}
   local m1=t.m1 or t[1]
   local m2=t.m2 or t[2]
   local len=m1.ncols
   local m1_transposed=t.m1_trans or t[3] or m1.trans
   local m2_transposed=t.m2_trans or t[4] or m2.trans
   assert(len==m1.nrows and len==m2.ncols and m2.nrows==len, "Square Matrix-Matrix Elementwise Multiplication Error: Matrices must be square and have same shape.")
-  local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-  alg.backend.Square_Matrix_Matrix_Elwise(m1[1], m2[1], m1_transposed, m2_transposed, len, ret)
-  return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
+  if t.overwrite or t[5] then
+    --overwrite m2
+    backend.Square_Matrix_Matrix_Elwise(m1[1], m2[1], v_transposed, m_transposed, len, m2[1])
+    return m2
+  else
+    local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
+    backend.Square_Matrix_Matrix_Elwise(m1[1], m2[1], m1_transposed, m2_transposed, len, ret)
+    return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
+  end
 end
 
 function alg.Square_Matrix_Matrix_Add(t)
@@ -402,7 +462,7 @@ function alg.Square_Matrix_Matrix_Add(t)
   local m2_transposed=t.m2_trans or t[4] or m2.trans
   assert(len==m1.nrows and len==m2.ncols and m2.nrows==len, "Square Matrix-Matrix Elementwise Addition Error: Matrices must be square and have same shape.")
   local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-  alg.backend.Square_Matrix_Matrix_Add(m1[1], m2[1], m1_transposed, m2_transposed, len, ret)
+  backend.Square_Matrix_Matrix_Add(m1[1], m2[1], m1_transposed, m2_transposed, len, ret)
   return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
 end
 
@@ -416,7 +476,7 @@ function alg.Square_Matrix_Matrix_Subtract(t)
   local m2_transposed=t.m2_trans or t[4] or m2.trans
   assert(len==m1.nrows and len==m2.ncols and m2.nrows==len, "Square Matrix-Matrix Elementwise Subtraction Error: Matrices must be square and have same shape.")
   local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
-  alg.backend.Square_Matrix_Matrix_Subtract(m1[1], m2[1], m1_transposed, m2_transposed, len, ret)
+  backend.Square_Matrix_Matrix_Subtract(m1[1], m2[1], m1_transposed, m2_transposed, len, ret)
   return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
 end
 
@@ -424,25 +484,44 @@ function alg.Vector_Function(t)
   --BIG NOTE: IF YOU USE A FUNCTION WITH LUA FUNCTIONS THEN YOU ARE TAKING ON SUBSTANTIAL OVERHEAD OF C TO LUA CALLBACKS
   --call signature: alg.Vector_Function{F,v [, f_start(=), f_end(=), overwrite(=), derivative(=)]}
   --F is array of functions, v is vector to apply functions to Elementwise, f_start is beginning of contiguous region in array to apply functions to, f_end ..., overwrite writes over the memory of the input vector, derivative tells whether you want the to apply the first derivatives or not.
+  local F=t.F or t[1]
+  local v=t.v or t[2]
   local len=F.length
   assert(len==v.length, "Vector-Function Error: Length of vector of functions must match that of value vector.")
   local f_start=t.f_start or t[3] or 0
-  local f_end=t.f_end or t[4]
-  assert(not f_start or f_end, "Function Application Bounds Error: Given start bound must too provide end bound.")
-  local F=t.F or t[1]
-  local v=t.v or t[2]
+  local f_end=t.f_end or t[4] or  len-1
+  assert(not f_start~=0 or f_end, "Function Application Bounds Error: Given start bound must too provide end bound.")
   local overwrite=t.overwrite or t[5]
   local derivative=t.derivative or t[6] or false
   if overwrite then
-    alg.backend.Function_Vector_Ovw(F[1], v[1], len, f_start, f_end, derivative)
+    backend.Vector_Function(F[1], v[1], len, f_start, f_end, v[1], derivative)
     return v
   else
     local ret=backend._malloc(ffi.sizeof(TYPE)*len)
-    alg.backend.Function_Vector(F[1], v[1], len, f_start, f_end, ret, derivative)
+    backend._memcpy(ret,v[1],ffi.sizeof(TYPE)*len)
+    backend.Vector_Function(F[1], v[1], len, f_start, f_end, ret, derivative)
     return setmetatable({ffi.gc(ffi.cast('TYPE *', ret), backend._free), length=len, trans=false}, alg)
   end
 end
 
-alg.backend=backend
+local alg_mt={}
+
+function alg_mt.__call(self,t)
+  --adds the ability to call the library itself to generate vectors, matrices, or functions
+  --call signature: called the same way as New_Vector, etc EXCEPT you must include a string hashed as 'new' telling of what structure you want of 'vector','matrix','function'(and the constructor follows the same syntax as the respective New_)
+  local kind=t.new
+  assert(type(kind)=='string', "Alg_Basic New Call Error: Must give value as string for new= (case insensitive) from 'vector','matrix','function'.")
+  kind=kind:lower()
+  assert(kind=='vector' or kind=='matrix' or kind=='function', "Alg_Basic New Call Error: new=  must be (case insensitive) from 'vector','matrix','function'.")
+  if kind=='vector' then
+    return alg.New_Vector(t)
+  elseif kind=='matrix' then
+    return alg.New_Matrix(t)
+  else
+    return alg.New_Function(t)
+  end
+end
+
+setmetatable(alg, alg_mt)
 
 return alg
