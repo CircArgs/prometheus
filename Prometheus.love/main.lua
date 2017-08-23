@@ -36,8 +36,8 @@ local g5=my_functions{my_functions.three*functions.User.g2, 'g5'}
 
 local F=alg.New_Function{{functions.User.g1, functions.New.g2, g3, my_functions.g4, g5}}
 
-local M=alg{new='matrix',{{0,0,0,0,0},{.1,0,0,0,0},{.25,2.9,1,0,0},{.3,3.14,0,1,0},{.5,41.2,0,0,1}}}--just one way to make a matrix. There's a much lower level way and another utility function alg.New_Matrix
-local A=networks{M, F, ninputs=1, noutputs=3, nhidden=1}
+local structure=alg{new='matrix',{{0,0,0,0,0},{.1,0,0,0,0},{.25,2.9,1,0,0},{.3,3.14,0,1,0},{.5,41.2,0,0,1}}}--just one way to make a matrix. There's a much lower level way and another utility function alg.New_Matrix
+local A=networks{structure, F, ninputs=1, noutputs=3, nhidden=1}--you can make the first arguments named as well (see network class for details)
 
 local X=alg{new='vector', {1,0,0,0,0}}
 
