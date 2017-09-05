@@ -194,7 +194,7 @@ function alg.__tostring(o)
 end
 
 function alg.New_Vector(t)
-  --call signature: alg.New_Vector{length(=) [,trans(=), ptr(=)]} or alg.New_Vector{{1,2,3,...} [,length(=),trans(=)]}
+  --call signature: alg.New_Vector{length(=) [,trans(=), ptr(=)]} or alg.New_Vector{{1,2,3,...} [,length(=),trans(=)]} or alg.New_Vector{function [,length(=),trans(=)]}
   --NOTE: to get the actual array of values for a vector one must "dereference" it in a sense as one does a regular pointer in the FFI
   --(i.e. ptr[0] retrieves the value(s) pointed to by ptr) EXCEPT it is v[1] not 0
   --in the case where a table Initializer is given with a length,
@@ -203,6 +203,16 @@ function alg.New_Vector(t)
     local length=t.length or t[2] or #t[1]
     assert(length>=#t[1], "Vector Initialization Error: Length with given table initializer must be greater than table length.")
     return setmetatable({ffi.new("TYPE ["..length.."]",t[1]), length=length, trans=trans}, alg)
+  elseif type(t[1])=='function' then
+      local trans=t.trans or t[3] or false
+      local length=t.length or t[2]
+      assert(length>=0, "Vector Initialization Error: Length with given table initializer must be nonnegative.")
+      local ret=ffi.cast('TYPE *', backend._malloc(ffi.sizeof(TYPE)*length))
+      local fun=t[1]
+      for i=0, length do
+        ret[i]=fun(i)
+      end
+      return setmetatable({ffi.gc(ret, backend._free), length=length, trans=trans}, alg)
   else
     local trans=t.trans or t[2] or false
     local length=t.length or t[1]
@@ -312,6 +322,44 @@ function alg.Vector_Vector_Add(t)
     else
       local ret=backend._malloc(ffi.sizeof(TYPE)*len)
       backend.Vector_Vector_Add(u[1], v[1], u_transposed, v_transposed, len, ret)
+      return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=false} ,alg)
+    end
+  end
+end
+
+function alg.Vector_Vector_Subtract(t)
+  --elementwise subtract two vectors
+  --call signature: alg.Vector_Vector_Subtract{v1(=), v2(=) [,v1_trans(=), v2_trans(=)]}
+  --v1_trans, v2_trans are to override actual states of v1,v2
+  --calls C function in basic_backend library
+  --Can get slight performance boost doing this manually each  time (i.e. get rid of caching overhead by not using this utility)(?)
+  --NOTE: There is an implicit cast to 'void *' in argument 6 of Vector_Vector_Subtract in each condition
+  local u=t.v1 or t[1]
+  local v=t.v2 or t[2]
+  local u_transposed=t.v1_trans or t[3] or u.trans
+  local v_transposed=t.v2_trans or t[4] or v.trans
+  local len=u.length
+  assert(len==v.length, "Vector Length Error: Vectors must have same lengths to add.")
+  local u_transposed= u_transposed or false
+  local v_transposed= v_transposed or false
+  if(u_transposed) then
+    if(v_transposed) then
+      local ret=backend._malloc(ffi.sizeof(TYPE)*len)
+      backend.Vector_Vector_Subtract(u[1], v[1], u_transposed, v_transposed, len, ret)
+      return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=true}, alg)
+    else
+      local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
+      backend.Vector_Vector_Subtract(u[1], v[1], u_transposed, v_transposed, len, ret)
+      return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
+    end
+  else
+    if(v_transposed) then
+      local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)
+      backend.Vector_Vector_Subtract(u[1], v[1], u_transposed, v_transposed, len, ret)
+      return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=false}, alg)
+    else
+      local ret=backend._malloc(ffi.sizeof(TYPE)*len)
+      backend.Vector_Vector_Subtract(u[1], v[1], u_transposed, v_transposed, len, ret)
       return setmetatable({ffi.gc(ffi.cast('TYPE *',ret), backend._free), length=len, trans=false} ,alg)
     end
   end

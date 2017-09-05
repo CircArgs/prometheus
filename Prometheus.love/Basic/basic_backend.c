@@ -14,6 +14,7 @@ TODO: SPARSE MATRICES.... make a new library sparse_basic_backend
 #include <stdbool.h>/*for booleans*/
 #include <stddef.h>/*for size_t, NULL*/
 #include <string.h>/*for memcpy*/
+#include <math.h>
 
 typedef double TYPE; /*abstract away type name so can change to double precision easily*/
 typedef TYPE (*func_ptr)(TYPE);
@@ -100,6 +101,43 @@ void Vector_Vector_Add(TYPE u[], TYPE v[], bool u_trans, bool v_trans, size_t u_
       TYPE* ret=_ret;
       for(size_t i = 0; i < u_len; i++){
           ret[i]=v[i]+u[i];
+      }
+    }
+  }
+}
+
+__declspec(dllexport)
+/*vector-vector subtraction*/
+/*NOTES: relies on host to track whether retrun is column or row vector
+relies on host to check compatibility
+***ret is a pointer to either a single or double dimension array****/
+void Vector_Vector_Subtract(TYPE u[], TYPE v[], bool u_trans, bool v_trans, size_t u_len, void * _ret){/*OK*/
+  if(u_trans){
+    if(v_trans){
+      TYPE* ret=_ret;
+      for(size_t i = 0; i < u_len; i++){
+          ret[i]=u[i]-v[i];
+      }
+    }else{
+      TYPE (*ret)[u_len]=_ret;
+      for(size_t i = 0; i < u_len; i++){
+        for(size_t j = 0; j < u_len; j++){
+          ret[i][j]=u[j]-v[i];
+        }
+      }
+    }
+  }else{
+    if(v_trans){
+      TYPE (*ret)[u_len]=_ret;
+      for(size_t i = 0; i < u_len; i++){
+        for(size_t j = 0; j < u_len; j++){
+          ret[i][j]=u[i]-v[j];
+        }
+      }
+    }else{
+      TYPE* ret=_ret;
+      for(size_t i = 0; i < u_len; i++){
+          ret[i]=u[i]-v[i];
       }
     }
   }
@@ -399,6 +437,48 @@ void Square_Matrix_Matrix_Subtract(void * _m1, void * _m2, bool m1_trans, bool m
       }
     }
   }
+}
+
+int min_size(int a, int b){
+  if(a>b){return b;}
+  return a;
+}
+
+int max_size(int a, int b){
+  if(a>b){return a;}
+  return b;
+}
+
+__declspec(dllexport)
+ /*calculates the Frobenius norm between two matrices with potentially different sizes from upperleft corner.*/
+ /*does not consider transpose*/
+TYPE Frobenius(void * _m1, void * _m2, size_t size_m1, size_t size_m2){
+  size_t size_min = min_size(size_m1, size_m2);
+  size_t size_max = max_size(size_m1, size_m2);
+  TYPE (*m1)[size_m1]=_m1;
+  TYPE (*m2)[size_m2]=_m2;
+  TYPE (*m_max)[size_max];
+  if(size_m2==size_max){m_max=m2;}
+  else{m_max=m1;}
+  TYPE (*ret1)[size_max]=malloc(size_max*size_max*sizeof(TYPE));
+  for (size_t i = 0; i < size_min; i++){
+    for (size_t j = 0; j < size_min; j++){
+      ret1[i][j] = m1[i][j]-m2[i][j];
+    }
+  }
+  for (size_t i = size_min; i < size_max; i++){
+    for (size_t j = size_min; j < size_max; j++){
+      ret1[i][j] = m_max[i][j];
+    }
+  }
+  TYPE (*ret2)[size_max]=malloc(size_max*size_max*sizeof(TYPE));
+  Square_Matrix_Matrix(ret1, ret1, 0, 0, size_max, ret2);
+  free(ret1);
+  TYPE ret;
+  for(size_t i=0; i<size_max; i++){
+    ret+=ret2[i][i];
+  }
+  return sqrt(ret);
 }
 
 __declspec(dllexport)
