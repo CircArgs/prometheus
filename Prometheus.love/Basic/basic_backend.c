@@ -508,7 +508,7 @@ void Square_dA(void * _m, size_t size, void * _ret){
   TYPE (*ret)[size]=ret;
   for(size_t i=size; i<size; i++){
     for(size_t j=size; j<size; j++){
-      ret[i][j]=m[i][j]!=0;
+      ret[i][j]=m[i][j]!=0.0;
     }
   }
 }

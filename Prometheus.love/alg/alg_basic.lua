@@ -28,14 +28,6 @@ function alg.__index.Is_Function(o)
   return o.trans==nil and getmetatable(o)==alg
 end
 
-function alg.__index.dA(self)
-  local len=self.nrows
-  assert(self:Is_Matrix() and len==self.ncols, "Dualpart Matrix Error: object must be square matrix.")
-  local ret=ffi.new('TYPE['..len..']['..len..']')
-  backend.Square_dA(self[1],len,ret)
-  return setmetatable({ffi.gc(ffi.cast('TYPE (*)['..len..']', ret), backend._free), nrows=len, ncols=len, trans=self.trans}, alg)
-end
-
 function alg.__call(self, t)
   --call signature vector v: v{i} returns ith element (indexed from 0)
   --call signature matrix m: m{i,j} returns the element in the ith row and jth column  (indexed from 0)
@@ -134,7 +126,7 @@ local function Spaces(n)
 end
 local function Num_Length(n)
   local ret=#tostring(n)
-  if math.fmod(n,1)==0 then
+  if math.fmod(n, 1)==0 then
     ret=ret+.5
   end
   if n<0 then
@@ -491,7 +483,7 @@ function alg.Square_Matrix_Matrix_Elwise(t)
   assert(len==m1.nrows and len==m2.ncols and m2.nrows==len, "Square Matrix-Matrix Elementwise Multiplication Error: Matrices must be square and have same shape.")
   if t.overwrite or t[5] then
     --overwrite m2
-    backend.Square_Matrix_Matrix_Elwise(m1[1], m2[1], v_transposed, m_transposed, len, m2[1])
+    backend.Square_Matrix_Matrix_Elwise(m1[1], m2[1], m1_transposed, m2_transposed, len, m2[1])
     return m2
   else
     local ret=backend._malloc(ffi.sizeof(TYPE)*len*len)

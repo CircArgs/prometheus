@@ -196,7 +196,7 @@ functions.tanh=ffi.new('function', {math.tanh, function(x) return 1-math.tanh(x)
 defined'tanh'
 functions.gaussian=ffi.new('function', {function(x) return math.exp(-x^2) end, function(x) return -2*x*math.exp(-x^2) end})
 defined'gaussian'
-functions.linear=ffi.new('function', {function(x) return x end,function (x) return 1 end})
+functions.linear=ffi.new('function', {function(x) return x end, function (x) return 1 end})
 defined'linear'
 functions.arctan=ffi.new('function', {math.atan, function(x) return 1/(x^2+1) end})
 defined'arctan'

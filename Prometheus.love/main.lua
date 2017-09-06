@@ -54,9 +54,11 @@ alg.Vector_Function{F, X, A.ninputs, A.ninputs+A.nhidden-1, overwrite=true}--ove
 X=alg.Square_Matrix_Vector{A[1], X}
 alg.Vector_Function{F, X, overwrite=true}
 ]]
-
+--v=A:Add_Node{{0}, {1, 2}, functions.relu, {.314}, {.367, .52}}
+A:Add_Node{}
 function love.draw()
   --print3(P)--uncomment to see the adjacency matrix
   --print3(X)--call this to see the result of the written-out demo above
-  print3(A(X))--simple syntax. A is the network, X is the input. Call A like the function it is (using metamethod __call to intepret A as a function)
+  --print3(A.structure)--simple syntax. A is the network, X is the input. Call A like the function it is (using metamethod __call to intepret A as a function)
+  print3(table.pack(A:Memory(0))[1]..', '..table.pack(A:Memory(0))[2])
 end
