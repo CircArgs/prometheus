@@ -15,8 +15,33 @@ local TYPE=init.TYPE
 local network={__index={}}
 local network_mt={}
 
-function network.__call(self, v, grad)
+function network.__call(self, v, grad, rawout)
+  --call signature: Net(v [, grad, rawout])
+  --v is the input vector (just the length of the number of problem inputs)
+  --grad is a boolean for wanting the gradient with respect to network weight or not
+  --rawout is a boolean which says whether an output vector containing the entire final state of the network or not is desired
+  local prep_input_vector=function(v)
+    local ret=ffi.new('TYPE[?]', self.size)
+    for i=0, v.length-1 do--load new inputs
+      ret[i]=v[1][i]
+    end
+    for i=0, self.ninputs-self.nmemories-1 do --load memories
+      ret[i+v.length]=self.memories[1][i]
+    end
+    return setmetatable({ret, length=self.size, trans=v.trans}, alg)
+  end
+  local prep_outout_vector=function(v)
+    local ret=ffi.new('TYPE[?]', self.noutputs-self.nmemories)
+    for i=self.size-self.nmemories, self.size-1 do --unload memories
+      self.memories[1][i-self.size+self.nmemories]=v[1][i]
+    end
+    for i=0, self.noutputs-self.nmemories-1 do--unload outputs
+      ret[i]=v[1][i+self.size-self.noutputs]
+    end
+    return setmetatable({ret, length=self.noutputs-self.nmemories, trans=v.trans}, alg)
+  end
   assert(v:Is_Vector(), "Network Evaluation Error: Networks can currently only be evaluated on vectors.")
+  v=prep_input_vector(v)--transform the inputs into a vector of length size of the network's structure
   local F=self[2]
   local A=self[1]--get matrix (a.k.a. 'structure')
   local end_range=self.ninputs+self.nhidden-1
@@ -28,6 +53,7 @@ function network.__call(self, v, grad)
     end
     v=alg.Square_Matrix_Vector{A, v}
     alg.Vector_Function{F, v, overwrite=true}
+    if(not rawout) then v=prep_outout_vector(v) end
     return v
   else
     local dA=self:dA()
@@ -51,8 +77,15 @@ function network.__call(self, v, grad)
     alg.Square_Matrix_Matrix_Elwise{self:dA(), dA, overwrite=true}
     alg.Vector_Function{F, v, overwrite=true}
     --we overwrote the input vector and dA when we did stuff so we just return pointers to them (dA wasnt a matrix though so we make it one before returning)
+    if(not rawout) then v=prep_outout_vector(v) end
     return v, setmetatable({dA, nrows=A.nrows, ncols=A.ncols, trans=false}, alg)
   end
+end
+
+function network.__index.Erase_Memories(self)
+  --call signature: Net:Erase_Memories()
+  --resets all the memories of a network to 0s
+  self.memories=alg.New_Vector{self.nmemories}
 end
 
 function network.__index.dA(self)
@@ -63,7 +96,7 @@ function network.__index.dA(self)
   local ret=ffi.new('TYPE['..len..']['..len..']')
   for i=0, len-1 do
     for j=0, len-1 do
-      if mat[1][i][j]~=0 and (i~=j or (i==j and i<self.ninputs+self.nhidden )) then
+      if mat[1][i][j]~=0 and (i~=j or (i==j and i<self.ninputs+self.nhidden)) then
         ret[i][j]=1
       end
     end
@@ -73,13 +106,13 @@ end
 
 function network.__index.backprop(self, m)
   --m is a square matrix with the same shape as the structure of self
-  --m is meant to be a gradient shaped into a matrix of the derivatives with respect to the weights of the correspondingadjaceny matrix of the network
+  --m is meant to be a gradient shaped into a matrix of the derivatives with respect to the weights of the corresponding adjaceny matrix of the network
   --call signature: net:backprop(m)
   alg.Square_Matrix_Matrix_Subtract{self[1], m}
 end
 
 function network.New_Network(t)
-  --call signature: network.New_Network{structure(=), activations(=), ninputs(=), noutputs(=), nhidden(=)}
+  --call signature: network.New_Network{structure(=), activations(=), ninputs(=), noutputs(=), nhidden(=) [, nmemories(=)]}
   --structure is an adjacency matrix
   --activations is a vector of functions to serve as their respective row's (each a node's array of link weights) activation function
   --size is the total number of nodes in the network
@@ -93,13 +126,16 @@ function network.New_Network(t)
   local ninputs=t.ninputs or t[3]
   local nhidden=t.nhidden or t[5]
   local noutputs=t.noutputs or t[4]
+  local nmemories=t.nmemories or t[6] or 0
   local _,c1=pcall(function(x) return math.fmod(x, 1) end, ninputs)
   local _,c2=pcall(function(x) return math.fmod(x, 1) end, nhidden)
   local _,c3=pcall(function(x) return math.fmod(x, 1) end, noutputs)
   assert(c1==0 and c2==0 and c3==0, "Newtwork Initialization Error: ninputs and noutputs must be positive INTEGERS and nhidden must be a nonnegative INTEGER.")
   assert(ninputs>0 and nhidden>-1 and noutputs>0, "Newtwork Initialization Error: ninputs and noutputs must be POSITIVE integers and nhidden must be a NONNEGATIVE integer.")
-  assert(ninputs+nhidden+noutputs==size, "Newtwork Initialization Error: ninputs+nhidden+noutputs must equal the nrows and ncols of the given structure.")
-  return setmetatable({structure, activations, structure=structure, activations=activations, size=size, ninputs=ninputs, nhidden=nhidden, noutputs=noutputs, nmemories=0, memories=nil, fitness=0}, network)
+  assert(ninputs+nhidden+noutputs+nmemories==size, "Newtwork Initialization Error: ninputs+nhidden+noutputs+nmemories must equal the nrows and ncols of the given structure.")
+  local ret= setmetatable({structure, activations, structure=structure, activations=activations, size=size, ninputs=ninputs, nhidden=nhidden, noutputs=noutputs, nmemories=nmemories, fitness=0}, network)
+  ret:Erase_Memories()--set memories to be a vector of zeros
+  return ret
 end
 
 function network_mt.__call(self, t)
@@ -113,7 +149,7 @@ function network.__index.Is_Network(self)
 end
 
 function network.__index.Add_Node(self, t)
-  --call signature: A:Add_Node{ins(=), outs(=), fun(=) [, in_weights(=), out_weights(=)]}
+  --call signature: A:Add_Node{ins(=), outs(=), fun(=) [, in_weights(=), out_weights(=), keep_memories(=)]}
   --ins is a table of input indices, outs is a table of output indices, function is the activation function of the node (the output in case ins=nil i.e. memory input/output pair)
   --[[if ins==nil then it is assumed the node is a new input in which case a corresponding output node will be added to the network.
    outs is then a table of intermediate nodes in the network. in_weights will feed into them and out_weights will feed to the outs.
@@ -124,6 +160,7 @@ function network.__index.Add_Node(self, t)
   --#outs==#ins or given in_weights and out_weights where #ins==#in_weights or #out_weights==#outs
   --in other words, we assume that if #ins==#outs, those links are being replaced (ins[i] and outs[i] currently have a link that will be set to 0 once the new node is added). Otherwise, we do not
   --if ins is nil and out_weights is nil then the links are initilized to 1s
+  --keep_memories is a boolean which if false resizes memory array in case ins==nil (new memory node). Otherwise, will copy existing memory values. false by default
   local tcheck=function(io, ints)--ints (do they have to be integers?) 1 (or nothing) for true 0 for false
     local ints=ints or 1
     for i=1,#io do
@@ -208,35 +245,29 @@ function network.__index.Add_Node(self, t)
   end
   local fun_cpy_insert=function(F, fun1, ind1, len, fun2, ind2)
     local ret=ffi.new('function[?]', len)
-    local i = 0
-    local temp=nil
-    while i<len do
-      if i==ind1 then
-        temp=F[i]
-        ret[i]=fun1
-        i=i+1
-        ret[i]=temp
-      elseif i==ind2 then
-        temp=F[i]
-        ret[i]=fun2
-        i=i+1
-        ret[i]=temp
-      else
-        ret[i]=F[i]
-      end
-      i = i + 1
+    for i=0, ind1-1 do
+      ret[i]=F[i]
+    end
+    ret[ind1]=fun1
+    for i=ind1+1, len-2 do
+      ret[i]=F[i-1]
+    end
+    if ind2 then
+      ret[len-1]=fun2
+    else
+      ret[len-1]=F[len-2]
     end
     return ret
   end
   local ins=t[1] or t.ins or nil
   assert(ins==nil or type(ins)=='table' and #ins>0 and tcheck(ins), "Add Node Error: Must provide at least one in node (or ins=nil) and in node(s) must be all nonnegative integers less than the size of the network.")
-  local outs=t[2] or t.outs or {}
+  local outs=t.outs or t[2]  or {}
   assert(type(outs)=='table' and #outs>=0 and tcheck(outs), "Add Node Error: Must provide at least one out node and out node(s) must be all nonnegative integers less than the size of the network.")
-  local in_weights=t[4] or t.in_weights or {}
-  local out_weights=t[5] or t.out_weights or {}
+  local in_weights=t.in_weights or t[4] or  {}
+  local out_weights=t.out_weights or t[5] or {}
   assert(type(in_weights)=='table' and tcheck(in_weights, 0), "Add Node Error: Provided in_weights must be table.")
   assert(type(out_weights)=='table' and tcheck(out_weights, 0), "Add Node Error: Provided out_weights must be table.")
-  local fun=t[3] or t.fun or functions.linear
+  local fun=t.fun or t[3] or functions.linear
   assert(ffi.istype('function', fun), "Add Node Error: fun must be function.")
   local len=self.size
   if(ins~=nil) then
@@ -245,7 +276,7 @@ function network.__index.Add_Node(self, t)
     local new_node_num=self.ninputs+self.nhidden
     self[1][1]=shift(self[1][1], new_node_num, len)
     local mat=self[1][1]
-    self[2][1]=fun_cpy_insert(self[2][1], fun, new_node_num, len)
+    self[2][1]=fun_cpy_insert(self[2][1], fun, new_node_num, len+1)
     local F=self[2][1]
     self[2].length=self[2].length+1--activations is longer
     self[1].nrows=self[1].nrows+1--structure larger
@@ -277,14 +308,11 @@ function network.__index.Add_Node(self, t)
     local new_node_num=self.ninputs
     self[1][1]=shift(self[1][1], new_node_num, len, 1)
     local mat=self[1][1]
-    self[2][1]=fun_cpy_insert(self[2][1], functions.linear, new_node_num, len, fun, len-1)
+    self[2][1]=fun_cpy_insert(self[2][1], functions.linear, new_node_num, len+2, fun, "pigglywiggly")
     local F=self[2][1]
     self[2].length=self[2].length+2--activations longer
     self[1].nrows=self[1].nrows+2--structure larger
     self[1].ncols=self[1].ncols+2
-    in_weights=in_weights or {}
-    out_weights=out_weights or {}
-    outs=outs or {}
     for i=1, #outs do
       mat[outs[i]+1][new_node_num]=in_weights[i] or 1
       mat[len+1][outs[i]+1]=out_weights[i] or 1
@@ -294,6 +322,12 @@ function network.__index.Add_Node(self, t)
     self.nmemories=self.nmemories+1
     self.noutputs=self.noutputs+1
     self.size=self.size+1
+    local keep_memories=t.keep_memories or t[6] or false
+    if self.nmemories~=0 and keep_memories then
+      self.memories=alg.New_Vector{alg.Vector_Iterator(self.memories), length=self.nmemories}--using function initializer for vectors with iterator over old memories to duplicate and fill new with 0s
+    else
+      self:Erase_Memories()
+    end
   end
   self.size=self.size+1
   return self
@@ -306,11 +340,11 @@ function network.__index.Add_Link(self, t)
   --weight is optional and the default is 1
   --if a link already exists between in_node and out_node, override must be true else this operation will return false. In this scenario override true will replace the existing link weight with the given one
   --change_link depends on this
-  local in_node=t[1] or t.in_node
+  local in_node=t.in_node or t[1]
   assert(type(in_node)=='number' and in_node>=0 and math.fmod(in_node,1)==0 and in_node<self.size,"Add Link Error: in_node must be provided as nonnegative integer less than the size of the network." )
-  local out_node=t[2] or t.out_node
+  local out_node=t.out_node or t[2]
   assert(type(out_node)=='number' and out_node>=0 and math.fmod(out_node,1)==0 and out_node<self.size,"Add Link Error: out_node must be provided as nonnegative integer less than the size of the network." )
-  local weight=t[3] or t.weight or 1
+  local weight=t.weight or t[3] or  1
   assert(type(weight)=='number', "Add Link Error: weight must be number.")
   local mat=self[1][1]
   if mat[out_node][in_node]~=0 and not override then
@@ -363,29 +397,79 @@ end
 function network.__index.Input(self, i)
   --call signature: Net:Input(i)
   --returns the index of structure belonging to the ith input (indexed from 0 & can return memory inputs without corresponding output)
+  --errors if not a valid index
   assert(type(i)=='number' and math.fmod(i,1)==0 and i>=0 and i<self.ninputs, "Network Input Index Error: index not nonnegative integer or is out of range.")
   return i
 end
 
+function network.Input(self, i)
+  --call signature: network.Input(Net, i)
+  --returns the index of structure belonging to the ith input (indexed from 0 & can return memory inputs without corresponding output)
+  --returns nil if not a valid index
+  if i>=0 and i<self.ninputs then
+    return i
+  else
+    return nil
+  end
+end
+
+
+
 function network.__index.Hidden(self, i)
   --call signature: Net:Input(i)
   --returns the index of structure belonging to the ith hidden node (indexed from 0)
+  --errors if not a valid index
   assert(type(i)=='number' and math.fmod(i,1)==0 and i>=0 and i<self.nhidden, "Network Hidden Index Error: index not nonnegative integer or is out of range.")
   return self.ninputs+i
+end
+
+function network.Hidden(self, i)
+  --call signature: network.Hidden(Net, i)
+  --returns the index of structure belonging to the ith hidden node (indexed from 0)
+  --returns nil if not a valid index
+  if i>=0 and i<self.nhidden then
+    return self.ninputs+i
+  else
+    return nil
+  end
 end
 
 function network.__index.Output(self, i)
   --call signature: Net:Input(i)
   --returns the index of structure belonging to the ith output (indexed from 0 & can return memory outputs without corresponding input)
+  --errors if not a valid index
   assert(type(i)=='number' and math.fmod(i,1)==0 and i>=0 and i<self.noutputs, "Network Outputs Index Error: index not nonnegative integer or is out of range.")
   return self.ninputs+self.nhidden+i
+end
+
+function network.Output(self, i)
+  --call signature: network.Output(Net, i)
+  --returns the index of structure belonging to the ith output (indexed from 0 & can return memory outputs without corresponding input)
+  --returns nil if not a valid index
+  if i>=0 and i<self.noutputs then
+    return self.ninputs+self.nhidden+i
+  else
+    return nil
+  end
 end
 
 function network.__index.Memory(self, i)
   --call signature: Net:Input(i)
   --returns the indices of structure belonging to the ith memory's input/output pair (indexed from 0)
+  --errors if not a valid index
   assert(type(i)=='number' and math.fmod(i,1)==0 and i>=0 and i<self.nmemories, "Network Memory Index Error: index not nonnegative integer or is out of range.")
   return self.ninputs-self.nmemories+i, self.size-self.nmemories+i
+end
+
+function network.Memory(self, i)
+  --call signature: network.Memory(Net, i)
+  --returns the indices of structure belonging to the ith memory's input/output pair (indexed from 0)
+  --returns nil if not a valid index
+  if i>=0 and i<self.nmemories then
+    return self.ninputs-self.nmemories+i, self.size-self.nmemories+i
+  else
+    return nil
+  end
 end
 
 function network.__sub(A, B)
@@ -398,7 +482,9 @@ function network.__add(A, B)
   return network.Mate(A, B)
 end
 
-
+function network.__tostring(self)
+  return tostring(self.structure)
+end
 
 setmetatable(network, network_mt)
 

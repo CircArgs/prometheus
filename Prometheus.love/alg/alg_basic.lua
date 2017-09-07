@@ -57,10 +57,10 @@ function alg.Resolve_Pointer(pointer)--just sugar
 end
 
 function alg.Vector_Iterator(v)
-  local i = 0
+  local i = -1
   local n = v.length
   return function ()
-    if i <= n then
+    if i+1 < n then
       i = i + 1
       return v[1][i]
     else
@@ -189,7 +189,8 @@ function alg.New_Vector(t)
   --call signature: alg.New_Vector{length(=) [,trans(=), ptr(=)]} or alg.New_Vector{{1,2,3,...} [,length(=),trans(=)]} or alg.New_Vector{function [,length(=),trans(=)]}
   --NOTE: to get the actual array of values for a vector one must "dereference" it in a sense as one does a regular pointer in the FFI
   --(i.e. ptr[0] retrieves the value(s) pointed to by ptr) EXCEPT it is v[1] not 0
-  --in the case where a table Initializer is given with a length,
+  --in the case where a table Initializer is given with a length, whatever length past the length of the given table there is will be set to 0s if #table initializer>1 otherwise they'll all be set to be the same as the only element in the table initializer
+  --if giving a function initializer, be sure it produces valid numerical output for the length of the vector you are generating. It can generate nil or false in which case that element will be 0
   if type(t[1])=='table' then
     local trans=t.trans or t[3] or false
     local length=t.length or t[2] or #t[1]
@@ -198,11 +199,11 @@ function alg.New_Vector(t)
   elseif type(t[1])=='function' then
       local trans=t.trans or t[3] or false
       local length=t.length or t[2]
-      assert(length>=0, "Vector Initialization Error: Length with given table initializer must be nonnegative.")
+      assert(length and type(length)=='number' and math.fmod(length,1)==0 and length>=0, "Vector Initialization Error: Length with given table initializer must be nonnegative.")
       local ret=ffi.cast('TYPE *', backend._malloc(ffi.sizeof(TYPE)*length))
       local fun=t[1]
-      for i=0, length do
-        ret[i]=fun(i)
+      for i=0, length-1 do
+        ret[i]=fun(i) or 0
       end
       return setmetatable({ffi.gc(ret, backend._free), length=length, trans=trans}, alg)
   else
